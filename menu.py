@@ -276,7 +276,6 @@ menu = st.sidebar.selectbox(
         "Caminhos mínimos",
         "Ciclos",
         "Arestas de maior peso",
-        "Clique",
         "Árvore de abrangência",
         "Cortes de arestas"
     ],
