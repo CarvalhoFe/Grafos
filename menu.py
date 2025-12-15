@@ -286,14 +286,11 @@ menu = st.sidebar.selectbox(
     ],
 )
 
-with st.sidebar.expander("Entrada de dados", expanded=True):
-    uploaded = st.file_uploader("Envie o CSV", type=["csv"])
-    path = st.text_input("Ou caminho local do CSV", value="top250-00-19.csv")
+# ===== CARREGAMENTO FIXO DO DATASET =====
+CSV_PATH = "data/top250-00-19.csv"
 
-df = load_csv(uploaded_file=uploaded, path=path)
-if df is None:
-    st.info("Envie o CSV ou informe o caminho para começar.")
-    st.stop()
+df = pd.read_csv(CSV_PATH)
+df = preprocess(df)
 
 try:
     df = preprocess(df)
