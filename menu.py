@@ -386,11 +386,64 @@ elif menu == "Conectividade":
 
 
 elif menu == "Graus":
-    st.subheader("Análise dos graus")
+    st.subheader("Análise de graus dos vértices")
+
+    st.write(
+        "O grau de um vértice representa o número de clubes distintos "
+        "com os quais um clube realizou transferências."
+    )
+
+    # ===== visão global =====
+    st.markdown("### Distribuição de graus")
     plot_degree_histogram(G)
+
     hubs = top_hubs(G, k=10)
-    st.write("Top 10 clubes por grau (vizinhos únicos, não-direcionado):")
-    st.dataframe(pd.DataFrame(hubs, columns=["clube", "grau"]), use_container_width=True)
+    st.write("Top 10 clubes por grau (grafo não direcionado):")
+    st.dataframe(
+        pd.DataFrame(hubs, columns=["clube", "grau"]),
+        use_container_width=True
+    )
+
+    st.divider()
+
+    # ===== análise individual =====
+    st.markdown("### Grau de um clube específico")
+
+    Gu = G.to_undirected()
+    clubs = sorted(list(Gu.nodes()))
+
+    club = st.selectbox(
+        "Selecione um clube",
+        clubs
+    )
+
+    if club:
+        grau = Gu.degree(club)
+        grau_in = G.in_degree(club)
+        grau_out = G.out_degree(club)
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Grau total", grau)
+        c2.metric("Grau de entrada", grau_in)
+        c3.metric("Grau de saída", grau_out)
+
+        # interpretação automática (estilo relatório)
+        if grau <= 2:
+            st.info(
+                "Interpretação: clube periférico, com poucas conexões "
+                "no mercado de transferências."
+            )
+        elif grau <= 10:
+            st.info(
+                "Interpretação: clube moderadamente conectado, "
+                "participa de algumas rotas do mercado."
+            )
+        else:
+            st.success(
+                "Interpretação: clube central (hub), "
+                "com muitas conexões e papel estrutural relevante na rede."
+            )
+
 
 elif menu == "Hubs":
     st.subheader("Hubs do grafo")
