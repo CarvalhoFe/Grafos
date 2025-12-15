@@ -275,7 +275,6 @@ menu = st.sidebar.selectbox(
         "Hubs",
         "Caminhos mínimos",
         "Ciclos",
-        "Subgrafo Liga-Liga",
         "Arestas de maior peso",
         "Clique",
         "Árvore de abrangência",
@@ -449,43 +448,10 @@ elif menu == "Ciclos":
     topn = st.slider("Top N", 5, 50, 15)
     st.dataframe(pd.DataFrame(ranking[:topn], columns=["clube", "participações_em_ciclos"]), use_container_width=True)
 
-elif menu == "Subgrafo Liga-Liga":
-    st.subheader("Subgrafo Liga-Liga (vértices = ligas)")
-    Lg = build_league_graph(df)
-    topk = st.slider("Top 10 ligas/pares", 5, 20, 10)
-    edf = top_league_pairs(Lg, k=topk)
-    st.dataframe(edf, use_container_width=True)
-
-    st.write("Visualização (top pares por contagem)")
-    # cria subgrafo só com as ligas envolvidas nesses pares
-    involved = set(edf["league_from"]).union(set(edf["league_to"]))
-    H = Lg.subgraph(list(involved)).copy()
-
-    pos = nx.spring_layout(H, seed=42)
-    fig = plt.figure(figsize=(9, 6))
-    nx.draw_networkx_nodes(H, pos, node_size=800)
-    nx.draw_networkx_edges(H, pos, arrows=True, alpha=0.6)
-    nx.draw_networkx_labels(H, pos, font_size=8)
-    plt.axis("off")
-    plt.tight_layout()
-    st.pyplot(fig)
-
 elif menu == "Arestas de maior peso":
     st.subheader("Arestas de maior peso (transferências mais caras)")
     k = st.slider("Top K", 5, 30, 10)
     st.dataframe(top_transfers(df, k=k), use_container_width=True)
-
-elif menu == "Clique":
-    st.subheader("Clique")
-    Hu, best, tri_sorted = clique_analysis(G)
-
-    st.metric("Tamanho da maior clique", f"{len(best)}")
-    st.write("Maior clique (lista de clubes):")
-    st.write(best)
-
-    st.write("Top clubes por número de triângulos (cliques de tamanho 3):")
-    topn = st.slider("Top N triângulos", 5, 50, 15)
-    st.dataframe(pd.DataFrame(tri_sorted[:topn], columns=["clube", "triângulos"]), use_container_width=True)
 
 elif menu == "Árvore de abrangência":
     st.subheader("Árvore de abrangência (na maior componente)")
