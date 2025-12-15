@@ -279,6 +279,7 @@ menu = st.sidebar.selectbox(
         "Arestas de maior peso",
         "Clique",
         "Árvore de abrangência",
+        "Cortes de arestas"
     ],
 )
 
@@ -509,3 +510,64 @@ elif menu == "Árvore de abrangência":
         plt.axis("off")
         plt.tight_layout()
         st.pyplot(fig)
+
+elif menu == "Cortes de arestas":
+    st.subheader("Cortes de arestas (corte mínimo)")
+
+    st.write(
+        "Aqui modelamos o mercado como **grafo não direcionado**: clubes = vértices, "
+        "transferências = arestas. O corte mínimo de arestas entre dois clubes indica "
+        "quantas arestas precisam ser removidas para desconectá-los."
+    )
+
+    # recomendação: usar a componente gigante para evitar 'sem caminho'
+    Hu = get_giant_wcc_subgraph(G).to_undirected()
+
+    clubs = sorted(list(Hu.nodes()))
+    col1, col2 = st.columns(2)
+    with col1:
+        a = st.selectbox("Clube A", clubs, index=0)
+    with col2:
+        b = st.selectbox("Clube B", clubs, index=min(1, len(clubs)-1))
+
+    show_cut_edges = st.checkbox("Mostrar as arestas do corte mínimo (pode ser pesado)", value=False)
+
+    if st.button("Calcular corte mínimo"):
+        if a == b:
+            st.warning("Escolha dois clubes diferentes.")
+        else:
+            try:
+                # tamanho do corte mínimo
+                k = nx.edge_connectivity(Hu, a, b)
+                st.success(f"Tamanho do corte mínimo de arestas entre **{a}** e **{b}**: **{k}**")
+
+                # interpretação rápida (igual a narrativa do relatório)
+                if k <= 2:
+                    st.info(
+                        "Interpretação: conectividade frágil — poucos caminhos independentes ligam os clubes."
+                    )
+                elif k <= 10:
+                    st.info(
+                        "Interpretação: conectividade moderada — existem caminhos alternativos, mas ainda limitados."
+                    )
+                else:
+                    st.info(
+                        "Interpretação: conectividade alta — rede redundante entre esses clubes (região central/hubs)."
+                    )
+
+                # opcional: listar as arestas do corte
+                if show_cut_edges:
+                    cut = nx.minimum_edge_cut(Hu, a, b)
+                    cut_list = [(u, v) for (u, v) in cut]
+                    st.write(f"Arestas no corte mínimo (total: {len(cut_list)}):")
+                    st.dataframe(pd.DataFrame(cut_list, columns=["u", "v"]), use_container_width=True)
+
+            except nx.NetworkXError as e:
+                st.error(f"Erro: {e}")
+            except Exception as e:
+                st.error(
+                    "Não consegui calcular o corte mínimo. "
+                    "Se o grafo for grande, isso pode ser pesado. "
+                    f"Detalhe: {e}"
+                )
+
