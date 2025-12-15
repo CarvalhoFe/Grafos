@@ -2,8 +2,13 @@ import streamlit as st
 import pandas as pd
 import networkx as nx
 import matplotlib.pyplot as plt
+from PIL import Image
 
 st.set_page_config(page_title="Transferências em Grafos", layout="wide")
+
+logo = Image.open("assets/logo.jfif")
+st.sidebar.image(logo, width=160)
+
 
 # =========================
 # Carregamento e pré-processamento
