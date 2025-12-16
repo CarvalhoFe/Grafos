@@ -71,11 +71,10 @@ def build_graphs(df: pd.DataFrame):
 
 
 # =========================
-# NOVO: Grafo de ligas
+# Grafo de ligas
 # =========================
 @st.cache_resource
 def build_league_graph(df: pd.DataFrame):
-    # MultiDiGraph: 1 aresta por transferência liga->liga
     Glm = nx.MultiDiGraph()
     for _, r in df.iterrows():
         Glm.add_edge(
@@ -85,7 +84,6 @@ def build_league_graph(df: pd.DataFrame):
             fee=float(r["Transfer_fee"]),
         )
 
-    # DiGraph agregado por par (liga_from, liga_to)
     Gl = nx.DiGraph()
     for u, v, data in Glm.edges(data=True):
         fee = float(data.get("fee", 0.0))
@@ -105,7 +103,7 @@ def top_league_hubs(Gl: nx.DiGraph, k=10):
 
 
 # =========================
-# Utilitários (SEM cache com grafos!)
+# Utilitários
 # =========================
 def get_giant_wcc_subgraph(G: nx.DiGraph) -> nx.DiGraph:
     comps = list(nx.weakly_connected_components(G))
@@ -115,7 +113,6 @@ def get_giant_wcc_subgraph(G: nx.DiGraph) -> nx.DiGraph:
     return G.subgraph(giant).copy()
 
 def giant_undirected_graph(G: nx.DiGraph) -> nx.Graph:
-    """Componente gigante, como grafo não direcionado."""
     return get_giant_wcc_subgraph(G).to_undirected()
 
 def plot_degree_histogram(G: nx.DiGraph):
@@ -140,7 +137,6 @@ def top_hubs(G: nx.DiGraph, k=15):
 
 def draw_sample_graph(Gm: nx.MultiDiGraph, n_edges=250, seed=42, show_labels=False):
     random.seed(seed)
-
     edges = list(Gm.edges(keys=True, data=True))
     if not edges:
         st.warning("Grafo vazio.")
@@ -148,7 +144,6 @@ def draw_sample_graph(Gm: nx.MultiDiGraph, n_edges=250, seed=42, show_labels=Fal
 
     sample = edges if len(edges) <= n_edges else random.sample(edges, n_edges)
 
-    # agrega por par (u,v)
     H = nx.DiGraph()
     for u, v, k, data in sample:
         fee = float(data.get("fee", 0.0))
@@ -264,19 +259,6 @@ def graph_diameter_and_path(Hu: nx.Graph):
     path = nx.shortest_path(Hu, pair[0], pair[1])
     return diameter, pair, path
 
-def avg_distance_between_sets(Hu: nx.Graph, A, B):
-    dists = []
-    for a in A:
-        for b in B:
-            if a == b:
-                continue
-            try:
-                d = nx.shortest_path_length(Hu, a, b)
-                dists.append(d)
-            except nx.NetworkXNoPath:
-                pass
-    return sum(dists) / len(dists) if dists else None
-
 def clique_analysis(G: nx.DiGraph):
     Hu = giant_undirected_graph(G)
 
@@ -298,37 +280,6 @@ def center_nodes_and_eccentricity(Hu: nx.Graph):
 
 def central_tree_from_root(Hu: nx.Graph, root: str) -> nx.Graph:
     return nx.bfs_tree(Hu, root).to_undirected()
-
-def draw_ego_graph(G: nx.DiGraph, node: str, seed=42):
-    Gu = G.to_undirected()
-
-    if node not in Gu:
-        st.warning("Clube não encontrado no grafo.")
-        return
-
-    neighbors = list(Gu.neighbors(node))
-    nodes = [node] + neighbors
-    H = Gu.subgraph(nodes).copy()
-
-    try:
-        pos = nx.spring_layout(H, seed=seed, k=0.9)
-    except Exception:
-        pos = nx.kamada_kawai_layout(H)
-
-    fig = plt.figure(figsize=(8, 6))
-    ax = plt.gca()
-    ax.set_facecolor("white")
-    fig.patch.set_facecolor("white")
-
-    nx.draw_networkx_nodes(H, pos, nodelist=neighbors, node_size=300, alpha=0.8)
-    nx.draw_networkx_nodes(H, pos, nodelist=[node], node_size=800, node_color="orange", alpha=0.95)
-    nx.draw_networkx_edges(H, pos, alpha=0.5)
-    nx.draw_networkx_labels(H, pos, font_size=8)
-
-    plt.title(f"Vizinhança imediata do clube: {node}")
-    plt.axis("off")
-    plt.tight_layout()
-    st.pyplot(fig)
 
 def draw_edge_cut_zoom(Hu: nx.Graph, a: str, b: str, cut_edges, hops=2, seed=42):
     def k_hop_nodes(G, src, k):
@@ -385,54 +336,6 @@ def draw_edge_cut_zoom(Hu: nx.Graph, a: str, b: str, cut_edges, hops=2, seed=42)
     plt.tight_layout()
     st.pyplot(fig)
 
-def draw_shortest_path_zoom(Hu: nx.Graph, path, hops=1, seed=42):
-    if not path or len(path) < 2:
-        st.warning("Caminho inválido para plotar.")
-        return
-
-    def k_hop_nodes(G, src, k):
-        visited = {src}
-        frontier = {src}
-        for _ in range(k):
-            nxt = set()
-            for x in frontier:
-                nxt |= set(G.neighbors(x))
-            nxt -= visited
-            visited |= nxt
-            frontier = nxt
-        return visited
-
-    nodes = set()
-    for v in path:
-        nodes |= k_hop_nodes(Hu, v, hops)
-
-    Z = Hu.subgraph(nodes).copy()
-    path_edges = list(zip(path[:-1], path[1:]))
-
-    try:
-        pos = nx.spring_layout(Z, seed=seed, k=1.0)
-    except Exception:
-        pos = nx.kamada_kawai_layout(Z)
-
-    fig = plt.figure(figsize=(10, 7))
-    ax = plt.gca()
-    ax.set_facecolor("white")
-    fig.patch.set_facecolor("white")
-
-    nx.draw_networkx_nodes(Z, pos, node_size=70, alpha=0.85)
-    nx.draw_networkx_edges(Z, pos, alpha=0.15, width=1.0)
-
-    nx.draw_networkx_nodes(Z, pos, nodelist=path, node_size=220, node_color="orange", alpha=0.95)
-    nx.draw_networkx_edges(Z, pos, edgelist=path_edges, alpha=0.95, width=3.0, edge_color="green")
-
-    labels = {v: v for v in path}
-    nx.draw_networkx_labels(Z, pos, labels=labels, font_size=8)
-
-    plt.title(f"Menor caminho destacado | tamanho={len(path)-1} | zoom hops={hops} | nós={Z.number_of_nodes()}")
-    plt.axis("off")
-    plt.tight_layout()
-    st.pyplot(fig)
-
 def all_pairs_shortest_lengths(Hu: nx.Graph):
     lengths = dict(nx.all_pairs_shortest_path_length(Hu))
     pairs = {}
@@ -479,6 +382,79 @@ def top_k_extremes_shortest_paths(Hu: nx.Graph, k=5, min_dist=1):
 
 
 # =========================
+# NOVO: subgrafo por jogador
+# =========================
+def season_key(s: str):
+    """
+    Tenta ordenar temporadas de forma estável.
+    Funciona bem para formatos tipo "2008", "2008/09", "08/09", etc.
+    """
+    s = str(s)
+    digits = "".join(ch for ch in s if ch.isdigit())
+    if len(digits) >= 4:
+        return int(digits[:4])
+    if len(digits) >= 2:
+        return int(digits[:2])
+    return 0
+
+def build_player_subgraph(df: pd.DataFrame, player_name: str):
+    dpf = df[df["Name"] == player_name].copy()
+    if dpf.empty:
+        return None, dpf
+
+    # ordena por temporada (aprox.)
+    dpf["__season_key"] = dpf["Season"].apply(season_key)
+    dpf = dpf.sort_values(["__season_key", "Season"]).drop(columns=["__season_key"])
+
+    # grafo do jogador (agregado por par de clubes)
+    Hp = nx.DiGraph()
+    for _, r in dpf.iterrows():
+        u = r["Team_from"]
+        v = r["Team_to"]
+        fee = float(r["Transfer_fee"])
+        season = r["Season"]
+
+        if Hp.has_edge(u, v):
+            Hp[u][v]["count"] += 1
+            Hp[u][v]["total_fee"] += fee
+            Hp[u][v]["seasons"].append(season)
+        else:
+            Hp.add_edge(u, v, count=1, total_fee=fee, seasons=[season])
+
+    return Hp, dpf
+
+def draw_player_graph(Hp: nx.DiGraph, show_labels=True, seed=42):
+    if Hp is None or Hp.number_of_nodes() == 0:
+        st.warning("Subgrafo vazio.")
+        return
+
+    try:
+        pos = nx.spring_layout(Hp, seed=seed, k=1.0)
+    except Exception:
+        pos = nx.kamada_kawai_layout(Hp)
+
+    # largura por contagem
+    counts = [d.get("count", 1) for _, _, d in Hp.edges(data=True)]
+    mx = max(counts) if counts else 1
+    widths = [0.8 + 3.2 * (c / mx) for c in counts]
+
+    fig = plt.figure(figsize=(10, 7))
+    ax = plt.gca()
+    ax.set_facecolor("white")
+    fig.patch.set_facecolor("white")
+
+    nx.draw_networkx_nodes(Hp, pos, node_size=700, alpha=0.9)
+    nx.draw_networkx_edges(Hp, pos, width=widths, alpha=0.45, arrows=True)
+
+    if show_labels:
+        nx.draw_networkx_labels(Hp, pos, font_size=8)
+
+    plt.axis("off")
+    plt.tight_layout()
+    st.pyplot(fig)
+
+
+# =========================
 # Dataset fixo
 # =========================
 CSV_PATH = "data/top250-00-19.csv"
@@ -490,7 +466,7 @@ except Exception as e:
     st.stop()
 
 Gm, G = build_graphs(df)
-Glm, Gl = build_league_graph(df)  # NOVO
+Glm, Gl = build_league_graph(df)
 
 # =========================
 # UI
@@ -597,39 +573,6 @@ elif menu == "Graus":
     st.write("Top 10 clubes por grau (grafo não direcionado):")
     st.dataframe(pd.DataFrame(hubs, columns=["clube", "grau"]), use_container_width=True)
 
-    st.divider()
-    st.markdown("### Grau de um clube específico")
-
-    Gu = G.to_undirected()
-    clubs = sorted(list(Gu.nodes()))
-    club = st.selectbox("Selecione um clube", clubs)
-
-    if club:
-        grau = Gu.degree(club)
-        grau_in = G.in_degree(club)
-        grau_out = G.out_degree(club)
-
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Grau total", grau)
-        c2.metric("Grau de entrada", grau_in)
-        c3.metric("Grau de saída", grau_out)
-
-        if grau <= 2:
-            st.info("Interpretação: clube periférico, com poucas conexões no mercado de transferências.")
-        elif grau <= 10:
-            st.info("Interpretação: clube moderadamente conectado, participa de algumas rotas do mercado.")
-        else:
-            st.success("Interpretação: clube central (hub), com muitas conexões e papel estrutural relevante na rede.")
-
-        st.divider()
-        st.markdown("### Vizinhança imediata do clube")
-        st.write(
-            "O grafo abaixo representa o subgrafo induzido pelo clube selecionado "
-            "e seus vizinhos diretos, ilustrando visualmente o conceito de grau."
-        )
-
-    draw_ego_graph(G, club)
-
 elif menu == "Hubs":
     st.subheader("Hubs do grafo")
 
@@ -658,18 +601,18 @@ elif menu == "Hubs":
     plt.tight_layout()
     st.pyplot(fig)
 
-# =========================
-# NOVO: Subgrafos (ligas)
-# =========================
 elif menu == "Subgrafos":
     st.subheader("Subgrafos")
 
     modo = st.radio(
         "Escolha o tipo de subgrafo",
-        ["Hubs das ligas", "Liga específica"],
+        ["Hubs das ligas", "Liga específica", "Transferências de um jogador"],
         horizontal=True
     )
 
+    # =========================
+    # 1) Hubs das ligas
+    # =========================
     if modo == "Hubs das ligas":
         st.write("Subgrafo induzido pelas ligas mais conectadas (hubs) no grafo liga-liga.")
         k = st.slider("Qtd. de ligas (top K)", 5, 30, 10)
@@ -704,11 +647,14 @@ elif menu == "Subgrafos":
         st.pyplot(fig)
 
         st.info(
-            "Interpretação: esse núcleo liga-liga evidencia as ligas com mais rotas de negociação "
-            "e maior integração com o mercado internacional."
+            "Interpretação: evidencia ligas com maior integração no mercado internacional "
+            "(muitas rotas de negociação com outras ligas)."
         )
 
-    else:
+    # =========================
+    # 2) Liga específica (ego)
+    # =========================
+    elif modo == "Liga específica":
         st.write("Vizinhança de uma liga no grafo liga-liga (quem negocia com ela).")
         Gu = Gl.to_undirected()
         ligas = sorted(list(Gu.nodes()))
@@ -740,6 +686,50 @@ elif menu == "Subgrafos":
             plt.tight_layout()
             st.pyplot(fig)
 
+    # =========================
+    # 3) Jogador (novo)
+    # =========================
+    else:
+        st.write("Selecione um jogador e veja o subgrafo das transferências dele (clubes como nós).")
+
+        # busca (para não jogar 200k nomes no selectbox)
+        all_players = sorted(df["Name"].dropna().unique().tolist())
+
+        query = st.text_input("Buscar jogador (digite parte do nome)", value="")
+        if query.strip():
+            filt = [p for p in all_players if query.lower() in p.lower()]
+        else:
+            filt = all_players[:500]  # fallback: mostra só os primeiros pra não travar
+
+        player = st.selectbox("Jogador", filt)
+
+        if st.button("Gerar subgrafo do jogador"):
+            Hp, dpf = build_player_subgraph(df, player)
+
+            if dpf.empty or Hp is None:
+                st.warning("Não encontrei transferências para esse jogador na base.")
+            else:
+                st.success(f"Transferências encontradas: {len(dpf)}")
+
+                # tabela
+                show_cols = ["Season", "Team_from", "Team_to", "League_from", "League_to", "Transfer_fee"]
+                st.dataframe(dpf[show_cols], use_container_width=True)
+
+                # métricas do subgrafo
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Clubes no subgrafo", Hp.number_of_nodes())
+                c2.metric("Arestas (movimentos)", Hp.number_of_edges())
+                c3.metric("Total pago (somado)", f"{dpf['Transfer_fee'].sum():,.0f}")
+
+                st.divider()
+                st.markdown("### Visualização do subgrafo do jogador")
+                draw_player_graph(Hp, show_labels=True, seed=42)
+
+                st.info(
+                    "Interpretação: esse subgrafo mostra o 'trajeto' do jogador no mercado, "
+                    "incluindo possíveis retornos e repetição de rotas entre clubes."
+                )
+
 elif menu == "Caminhos mínimos":
     st.subheader("Caminhos mínimos na rede de transferências")
 
@@ -763,7 +753,6 @@ elif menu == "Caminhos mínimos":
     )
 
     st.divider()
-
     st.markdown("### Menor caminho entre dois clubes")
 
     clubs = sorted(list(Hu.nodes()))
@@ -785,9 +774,6 @@ elif menu == "Caminhos mínimos":
             st.warning("Não existe caminho entre esses clubes.")
 
     st.divider()
-
-    st.markdown("### Maior caminho da rede (diâmetro)")
-
     st.markdown("### Top 5 maiores e menores caminhos mínimos")
 
     min_dist = st.slider(
@@ -800,12 +786,9 @@ elif menu == "Caminhos mínimos":
 
     if st.button("Gerar Top 5"):
         with st.spinner("Calculando rankings..."):
-            max_items, min_items, diam = top_k_extremes_shortest_paths(
-                Hu, k=5, min_dist=min_dist
-            )
+            max_items, min_items, diam = top_k_extremes_shortest_paths(Hu, k=5, min_dist=min_dist)
 
         st.subheader("Top 5 maiores distâncias mínimas")
-
         if not max_items:
             st.warning("Não foi possível calcular.")
         else:
@@ -820,15 +803,8 @@ elif menu == "Caminhos mínimos":
             ])
             st.dataframe(df_max, use_container_width=True)
 
-            st.info(
-                "Esses pares representam clubes situados em extremos opostos da rede, "
-                "caracterizando o diâmetro."
-            )
-
         st.divider()
-
         st.subheader("Top 5 menores distâncias mínimas")
-
         if not min_items:
             st.warning("Não foram encontrados pares com esse filtro.")
         else:
@@ -843,79 +819,34 @@ elif menu == "Caminhos mínimos":
             ])
             st.dataframe(df_min, use_container_width=True)
 
-            st.info(
-                "Os menores caminhos mostram clubes fortemente conectados, "
-                "frequentemente ligados por transferências diretas ou por poucos intermediários."
-            )
-
 elif menu == "Ciclos":
     st.subheader("Ciclos")
-
-    st.write(
-        "Ranking aproximado de clubes que mais aparecem em ciclos "
-        "baseado em ciclos no subgrafo da componente gigante."
-    )
+    st.write("Ranking aproximado de clubes que mais aparecem em ciclos (baseado na componente gigante).")
 
     cycles_found, ranking = cycles_ranking(G)
     st.metric("Ciclos analisados (aprox.)", f"{cycles_found}")
 
     topn = st.slider("Top N", 5, 50, 15)
-    st.dataframe(
-        pd.DataFrame(ranking[:topn], columns=["clube", "participações_em_ciclos"]),
-        use_container_width=True
-    )
+    st.dataframe(pd.DataFrame(ranking[:topn], columns=["clube", "participações_em_ciclos"]), use_container_width=True)
 
 elif menu == "Cliques":
     st.subheader("Cliques e triângulos no grafo")
-
-    st.write(
-        "A análise de cliques é feita na componente gigante do grafo tratado como não direcionado. "
-        "Cliques representam subconjuntos totalmente conectados."
-    )
+    st.write("A análise de cliques é feita na componente gigante (grafo não direcionado).")
 
     Hu, max_clique, tri_sorted = clique_analysis(G)
 
     st.markdown("### Maior clique")
     if max_clique:
         st.metric("Tamanho da maior clique", len(max_clique))
-        st.write("Clubes na maior clique:")
         st.write(", ".join(sorted(max_clique)))
     else:
         st.warning("Não foi possível identificar uma clique.")
-
-    st.info(
-        "Interpretação: uma clique grande sugere um submercado altamente interconectado "
-        "muitas relações redundantes entre os clubes."
-    )
 
     st.divider()
     st.markdown("### Participação em triângulos")
     topn = st.slider("Top N clubes por triângulos", 5, 50, 15)
     tri_df = pd.DataFrame(tri_sorted[:topn], columns=["clube", "número de triângulos"])
     st.dataframe(tri_df, use_container_width=True)
-
-    if len(max_clique) <= 25 and len(max_clique) > 0:
-        st.divider()
-        st.markdown("### Visualização da maior clique")
-        Hc = Hu.subgraph(max_clique).copy()
-        try:
-            pos = nx.spring_layout(Hc, seed=42)
-        except Exception:
-            pos = nx.kamada_kawai_layout(Hc)
-
-        fig = plt.figure(figsize=(7, 5))
-        ax = plt.gca()
-        ax.set_facecolor("white")
-        fig.patch.set_facecolor("white")
-
-        nx.draw_networkx_nodes(Hc, pos, node_size=600)
-        nx.draw_networkx_edges(Hc, pos, alpha=0.7)
-        nx.draw_networkx_labels(Hc, pos, font_size=9)
-        plt.axis("off")
-        plt.tight_layout()
-        st.pyplot(fig)
-    elif len(max_clique) > 25:
-        st.info("A visualização da maior clique foi omitida (muitos nós, ficaria ilegível).")
 
 elif menu == "Arestas de maior peso":
     st.subheader("Transferências mais caras (top K)")
@@ -974,11 +905,6 @@ elif menu == "Árvore central":
 
     Hu = giant_undirected_graph(G)
 
-    st.write(
-        "Aqui calculamos o(s) centro(s) do grafo (menor excentricidade) e construímos "
-        "uma árvore BFS a partir de um centro."
-    )
-
     if Hu.number_of_nodes() == 0:
         st.warning("Grafo vazio.")
     else:
@@ -989,16 +915,11 @@ elif menu == "Árvore central":
             st.warning("Não foi possível calcular o centro.")
         else:
             st.metric("Excentricidade mínima (raio do grafo)", f"{min_ecc}")
-
-            center_choice = st.selectbox("Escolha um centro para enraizar a árvore", centers)
+            center_choice = st.selectbox("Escolha um centro", centers)
             Tcentral = central_tree_from_root(Hu, center_choice)
 
-            st.success(f"Árvore central gerada a partir do centro: {center_choice}")
-
             st.divider()
-            st.write("Visualização: amostra da árvore central")
             sample_n = st.slider("Qtd. de nós para visualizar (árvore central)", 50, 450, 180, step=10)
-
             nodes = list(Tcentral.nodes())[:sample_n]
             Ts = Tcentral.subgraph(nodes).copy()
 
@@ -1014,11 +935,6 @@ elif menu == "Árvore central":
 
             nx.draw_networkx_nodes(Ts, pos, node_size=70)
             nx.draw_networkx_edges(Ts, pos, alpha=0.6)
-
-            show_labels = st.checkbox("Mostrar labels (árvore central)", value=False)
-            if show_labels:
-                nx.draw_networkx_labels(Ts, pos, font_size=6)
-
             plt.axis("off")
             plt.tight_layout()
             st.pyplot(fig)
@@ -1058,13 +974,6 @@ elif menu == "Cortes de arestas":
                     kcut = nx.edge_connectivity(Hu, a, b)
 
                 st.success(f"Tamanho do corte mínimo entre {a} e {b}: {kcut}")
-
-                if kcut <= 2:
-                    st.info("Interpretação: conectividade frágil, depende de poucas arestas críticas.")
-                elif kcut <= 10:
-                    st.info("Interpretação: conectividade moderada, existem caminhos alternativos, mas limitados.")
-                else:
-                    st.info("Interpretação: conectividade alta, região densa e redundante.")
 
                 cut = None
                 if plot_cut or show_cut_edges:
