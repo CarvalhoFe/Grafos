@@ -321,6 +321,202 @@ def draw_ego_graph(G: nx.DiGraph, node: str, seed=42):
     plt.tight_layout()
     st.pyplot(fig)
 
+def draw_edge_cut_zoom(Hu: nx.Graph, a: str, b: str, cut_edges, hops=2, seed=42):
+    """
+    Plota um 'zoom' do grafo ao redor de a e b e destaca as arestas do corte.
+    cut_edges: set de tuplas (u,v) no grafo não direcionado
+    hops: quantos saltos (1 ou 2 costuma ficar bom)
+    """
+
+    def k_hop_nodes(G, src, k):
+        visited = {src}
+        frontier = {src}
+        for _ in range(k):
+            nxt = set()
+            for x in frontier:
+                nxt |= set(G.neighbors(x))
+            nxt -= visited
+            visited |= nxt
+            frontier = nxt
+        return visited
+
+    A = k_hop_nodes(Hu, a, hops)
+    B = k_hop_nodes(Hu, b, hops)
+    nodes = A | B  # união dos "zooms"
+
+    Z = Hu.subgraph(nodes).copy()
+
+    # normaliza arestas do corte (grafo não dirigido)
+    cut_norm = set()
+    for (u, v) in cut_edges:
+        cut_norm.add((u, v))
+        cut_norm.add((v, u))
+
+    # separa arestas
+    red_edges = []
+    gray_edges = []
+    for u, v in Z.edges():
+        if (u, v) in cut_norm:
+            red_edges.append((u, v))
+        else:
+            gray_edges.append((u, v))
+
+    # layout
+    try:
+        pos = nx.spring_layout(Z, seed=seed, k=1.0)
+    except Exception:
+        pos = nx.kamada_kawai_layout(Z)
+
+    fig = plt.figure(figsize=(10, 7))
+    ax = plt.gca()
+    ax.set_facecolor("white")
+    fig.patch.set_facecolor("white")
+
+    # nós
+    nx.draw_networkx_nodes(Z, pos, node_size=80, alpha=0.85)
+
+    # destaca A e B
+    nx.draw_networkx_nodes(Z, pos, nodelist=[a], node_size=450, node_color="orange")
+    nx.draw_networkx_nodes(Z, pos, nodelist=[b], node_size=450, node_color="orange")
+
+    # arestas normais
+    nx.draw_networkx_edges(Z, pos, edgelist=gray_edges, alpha=0.20, width=1.0)
+
+    # arestas do corte (destaque)
+    nx.draw_networkx_edges(Z, pos, edgelist=red_edges, alpha=0.95, width=2.5, edge_color="red")
+
+    # labels só nos nós principais (pra não poluir)
+    nx.draw_networkx_labels(Z, pos, labels={a: a, b: b}, font_size=9)
+
+    plt.title(f"Zoom do corte mínimo entre {a} e {b} | hops={hops} | nós={Z.number_of_nodes()}")
+    plt.axis("off")
+    plt.tight_layout()
+    st.pyplot(fig)
+
+
+def draw_shortest_path_zoom(Hu: nx.Graph, path, hops=1, seed=42):
+    """
+    Plota um zoom do grafo ao redor do caminho e destaca as arestas do menor caminho.
+    path: lista de nós [v0, v1, ..., vk]
+    hops: quantos saltos extra ao redor de cada nó do caminho para dar contexto
+    """
+
+    if not path or len(path) < 2:
+        st.warning("Caminho inválido para plotar.")
+        return
+
+    def k_hop_nodes(G, src, k):
+        visited = {src}
+        frontier = {src}
+        for _ in range(k):
+            nxt = set()
+            for x in frontier:
+                nxt |= set(G.neighbors(x))
+            nxt -= visited
+            visited |= nxt
+            frontier = nxt
+        return visited
+
+    # Nós do caminho + vizinhança
+    nodes = set()
+    for v in path:
+        nodes |= k_hop_nodes(Hu, v, hops)
+
+    Z = Hu.subgraph(nodes).copy()
+
+    # arestas do caminho
+    path_edges = list(zip(path[:-1], path[1:]))
+
+    # layout
+    try:
+        pos = nx.spring_layout(Z, seed=seed, k=1.0)
+    except Exception:
+        pos = nx.kamada_kawai_layout(Z)
+
+    fig = plt.figure(figsize=(10, 7))
+    ax = plt.gca()
+    ax.set_facecolor("white")
+    fig.patch.set_facecolor("white")
+
+    # tudo em cinza
+    nx.draw_networkx_nodes(Z, pos, node_size=70, alpha=0.85)
+    nx.draw_networkx_edges(Z, pos, alpha=0.15, width=1.0)
+
+    # destaca nós do caminho
+    nx.draw_networkx_nodes(Z, pos, nodelist=path, node_size=220, node_color="orange", alpha=0.95)
+
+    # destaca arestas do caminho
+    nx.draw_networkx_edges(Z, pos, edgelist=path_edges, alpha=0.95, width=3.0, edge_color="green")
+
+    # labels só nos nós do caminho (pra não poluir)
+    labels = {v: v for v in path}
+    nx.draw_networkx_labels(Z, pos, labels=labels, font_size=8)
+
+    plt.title(f"Menor caminho (destacado) | tamanho={len(path)-1} | zoom hops={hops} | nós={Z.number_of_nodes()}")
+    plt.axis("off")
+    plt.tight_layout()
+    st.pyplot(fig)
+
+
+def all_pairs_shortest_lengths(Hu: nx.Graph):
+    """
+    Retorna dict {(u,v): dist} só para u < v (sem duplicar v,u).
+    """
+    lengths = dict(nx.all_pairs_shortest_path_length(Hu))
+    pairs = {}
+    nodes = list(Hu.nodes())
+    idx = {n: i for i, n in enumerate(nodes)}
+
+    for u, dist_dict in lengths.items():
+        iu = idx[u]
+        for v, d in dist_dict.items():
+            iv = idx[v]
+            if iu < iv:  # guarda só uma direção
+                pairs[(u, v)] = d
+    return pairs
+
+
+def top_k_extremes_shortest_paths(Hu: nx.Graph, k=5, min_dist=1):
+    """
+    Retorna:
+      - max_items: lista de dicts com pares (u,v), dist, path (top k maiores)
+      - min_items: lista de dicts com pares (u,v), dist, path (top k menores, com dist >= min_dist)
+    """
+    pairs = all_pairs_shortest_lengths(Hu)
+    if not pairs:
+        return [], [], 0
+
+    # maior distância (diâmetro)
+    diameter = max(pairs.values())
+
+    # candidatos máximos (todos com dist == diâmetro)
+    max_pairs = [(uv, d) for uv, d in pairs.items() if d == diameter]
+    # pega até k (se quiser, você pode sortear ou ordenar)
+    max_pairs = max_pairs[:k]
+
+    max_items = []
+    for (u, v), d in max_pairs:
+        path = nx.shortest_path(Hu, u, v)
+        max_items.append({"u": u, "v": v, "dist": d, "path": path})
+
+    # candidatos mínimos (dist >= min_dist)
+    min_candidates = [(uv, d) for uv, d in pairs.items() if d >= min_dist]
+    if not min_candidates:
+        return max_items, [], diameter
+
+    # pega a menor distância existente respeitando min_dist
+    best_min = min(d for _, d in min_candidates)
+    min_pairs = [(uv, d) for uv, d in min_candidates if d == best_min]
+    min_pairs = min_pairs[:k]
+
+    min_items = []
+    for (u, v), d in min_pairs:
+        path = nx.shortest_path(Hu, u, v)
+        min_items.append({"u": u, "v": v, "dist": d, "path": path})
+
+    return max_items, min_items, diameter
+
+
 
 # =========================
 # Dataset fixo
@@ -502,25 +698,35 @@ elif menu == "Hubs":
     st.pyplot(fig)
 
 elif menu == "Caminhos mínimos":
-    st.subheader("Caminhos mínimos e maior distância")
+    st.subheader("Caminhos mínimos na rede de transferências")
 
     Hu = giant_undirected_graph(G)
 
     st.write(
-        f"A análise é feita na **componente gigante**: "
-        f"**{Hu.number_of_nodes()}** clubes e **{Hu.number_of_edges()}** arestas."
+        f"A análise é feita na **componente gigante** do grafo, "
+        f"composta por **{Hu.number_of_nodes()} clubes** e "
+        f"**{Hu.number_of_edges()} arestas**."
     )
 
-    # comprimento médio
+    # =========================
+    # Comprimento médio
+    # =========================
     try:
         avg_len = nx.average_shortest_path_length(Hu)
         st.metric("Comprimento médio do menor caminho", f"{avg_len:.2f}")
     except Exception:
-        st.warning("Não foi possível calcular o comprimento médio.")
+        st.warning("Não foi possível calcular o comprimento médio do caminho.")
+
+    st.info(
+        "Interpretação (relatório): em média, poucos intermediários separam "
+        "dois clubes quaisquer, indicando uma rede bem integrada."
+    )
 
     st.divider()
 
-    # menor caminho entre dois clubes
+    # =========================
+    # Menor caminho entre dois clubes
+    # =========================
     st.markdown("### Menor caminho entre dois clubes")
 
     clubs = sorted(list(Hu.nodes()))
@@ -530,64 +736,90 @@ elif menu == "Caminhos mínimos":
     with col2:
         b = st.selectbox("Clube B", clubs, index=min(1, len(clubs) - 1))
     with col3:
-        calc = st.button("Calcular menor caminho")
+        calc = st.button("Calcular")
 
     if calc:
         try:
             path = nx.shortest_path(Hu, a, b)
             st.success(f"Comprimento do caminho: {len(path) - 1}")
+            st.write("Caminho:")
             st.write(" → ".join(path))
         except nx.NetworkXNoPath:
             st.warning("Não existe caminho entre esses clubes.")
 
     st.divider()
 
-    # diâmetro
+    # =========================
+    # Diâmetro da rede
+    # =========================
     st.markdown("### Maior caminho da rede (diâmetro)")
 
-    if st.button("Calcular maior caminho (diâmetro)"):
-        with st.spinner("Calculando diâmetro..."):
-            diameter, (u, v), path = graph_diameter_and_path(Hu)
+    # =========================
+    # TOP 5 extremos
+    # =========================
+    st.markdown("### Top 5 maiores e menores caminhos mínimos")
 
-        st.success(f"Diâmetro da rede: {diameter}")
-        st.write(f"Par mais distante: **{u}** ↔ **{v}**")
-        st.write("Caminho correspondente:")
-        st.write(" → ".join(path))
-
-        st.info(
-            "Interpretação: o diâmetro representa a maior distância mínima "
-            "entre dois clubes na rede."
-        )
-
-    # papel estrutural dos hubs
-    st.divider()
-    st.markdown("### Papel estrutural dos hubs")
-
-    st.write(
-        "Comparação entre distâncias envolvendo clubes periféricos (baixo grau) "
-        "e clubes centrais (alto grau), sugerindo hubs como 'atalhos' estruturais."
+    min_dist = st.slider(
+        "Distância mínima para o Top 5 menores caminhos",
+        min_value=1,
+        max_value=5,
+        value=2,
+        help="Use 1 para conexões diretas. Use 2 para evitar arestas diretas."
     )
 
-    degrees = dict(Hu.degree())
-    sorted_nodes = sorted(degrees.items(), key=lambda x: x[1])
+    if st.button("Gerar Top 5"):
+        with st.spinner("Calculando rankings..."):
+            max_items, min_items, diam = top_k_extremes_shortest_paths(
+                Hu, k=5, min_dist=min_dist
+            )
 
-    k_group = st.slider("Quantidade de clubes por grupo (k)", 5, 30, 15)
-    perifericos = [n for n, _ in sorted_nodes[:k_group]]
-    hubs_sel = [n for n, _ in sorted_nodes[-k_group:]]
+        # ---------- MAIORES ----------
+        st.subheader("Top 5 maiores distâncias mínimas")
 
-    if st.button("Calcular distâncias médias (periferia x hubs)"):
-        with st.spinner("Calculando distâncias..."):
-            d_ph = avg_distance_between_sets(Hu, perifericos, hubs_sel)
-            d_pp = avg_distance_between_sets(Hu, perifericos, perifericos)
+        if not max_items:
+            st.warning("Não foi possível calcular.")
+        else:
+            df_max = pd.DataFrame([
+                {
+                    "Rank": i + 1,
+                    "Distância": it["dist"],
+                    "Par de clubes": f'{it["u"]} ↔ {it["v"]}',
+                    "Caminho": " → ".join(it["path"])
+                }
+                for i, it in enumerate(max_items)
+            ])
+            st.dataframe(df_max, use_container_width=True)
 
-        c1, c2 = st.columns(2)
-        c1.metric("Distância média periférico → hub", f"{d_ph:.2f}" if d_ph is not None else "N/A")
-        c2.metric("Distância média periférico → periférico", f"{d_pp:.2f}" if d_pp is not None else "N/A")
+            st.info(
+                "Esses pares representam clubes situados em extremos opostos "
+                "da rede, caracterizando o diâmetro."
+            )
 
-        st.info(
-            "Interpretação: se periférico→hub < periférico→periférico, "
-            "isso sugere que hubs reduzem distâncias na rede."
-        )
+        st.divider()
+
+        # ---------- MENORES ----------
+        st.subheader("Top 5 menores distâncias mínimas")
+
+        if not min_items:
+            st.warning("Não foram encontrados pares com esse filtro.")
+        else:
+            df_min = pd.DataFrame([
+                {
+                    "Rank": i + 1,
+                    "Distância": it["dist"],
+                    "Par de clubes": f'{it["u"]} ↔ {it["v"]}',
+                    "Caminho": " → ".join(it["path"])
+                }
+                for i, it in enumerate(min_items)
+            ])
+            st.dataframe(df_min, use_container_width=True)
+
+            st.info(
+                "Os menores caminhos mostram clubes fortemente conectados, "
+                "frequentemente ligados por transferências diretas ou por "
+                "poucos intermediários."
+            )
+
 
 elif menu == "Ciclos":
     st.subheader("Ciclos")
@@ -780,7 +1012,7 @@ elif menu == "Cortes de arestas":
 
     st.write(
         "O corte mínimo de arestas entre dois clubes indica **quantas arestas precisam ser removidas** "
-        "para desconectá-los. No relatório, isso diferencia **periferia frágil** vs **núcleo robusto**."
+        "para desconectá-los."
     )
 
     Hu = giant_undirected_graph(G)
@@ -792,14 +1024,24 @@ elif menu == "Cortes de arestas":
     with col2:
         b = st.selectbox("Clube B", clubs, index=min(1, len(clubs) - 1))
 
-    show_cut_edges = st.checkbox("Mostrar arestas do corte mínimo (pode ser pesado)", value=False)
+    st.divider()
+    col3, col4, col5 = st.columns([1.2, 1, 1.2])
+    with col3:
+        show_cut_edges = st.checkbox("Mostrar arestas do corte mínimo (tabela)", value=False)
+    with col4:
+        plot_cut = st.checkbox("Plotar zoom do corte (recomendado)", value=True)
+    with col5:
+        hops = st.slider("Zoom (saltos a partir de A e B)", 1, 3, 2)
 
     if st.button("Calcular corte mínimo"):
         if a == b:
             st.warning("Escolha dois clubes diferentes.")
         else:
             try:
-                kcut = nx.edge_connectivity(Hu, a, b)
+                # 1) tamanho do corte (pode ser mais rápido)
+                with st.spinner("Calculando conectividade por arestas..."):
+                    kcut = nx.edge_connectivity(Hu, a, b)
+
                 st.success(f"Tamanho do corte mínimo entre **{a}** e **{b}**: **{kcut}**")
 
                 if kcut <= 2:
@@ -809,9 +1051,23 @@ elif menu == "Cortes de arestas":
                 else:
                     st.info("Interpretação: conectividade alta — região densa e redundante (típico de hubs).")
 
-                if show_cut_edges:
-                    with st.spinner("Calculando mínimo corte (arestas)..."):
+                # 2) se for plotar OU listar arestas, precisamos do conjunto do corte
+                cut = None
+                if plot_cut or show_cut_edges:
+                    with st.spinner("Calculando conjunto de arestas do corte mínimo..."):
                         cut = nx.minimum_edge_cut(Hu, a, b)
+
+                # 3) PLOT (zoom com arestas do corte em vermelho)
+                if plot_cut and cut is not None:
+                    st.markdown("### Visualização do corte (zoom)")
+                    st.write(
+                        "Em **vermelho**, as arestas do corte mínimo. "
+                        "O gráfico mostra um **subgrafo local** (zoom) ao redor dos clubes A e B."
+                    )
+                    draw_edge_cut_zoom(Hu, a, b, cut_edges=cut, hops=hops, seed=42)
+
+                # 4) TABELA das arestas do corte
+                if show_cut_edges and cut is not None:
                     cut_list = [(u, v) for (u, v) in cut]
                     st.write(f"Arestas no corte mínimo (total: {len(cut_list)}):")
                     st.dataframe(pd.DataFrame(cut_list, columns=["u", "v"]), use_container_width=True)
@@ -823,3 +1079,4 @@ elif menu == "Cortes de arestas":
                     "Não consegui calcular o corte mínimo (pode ser pesado em alguns grafos). "
                     f"Detalhe: {e}"
                 )
+
