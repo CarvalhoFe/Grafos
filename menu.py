@@ -453,6 +453,42 @@ def draw_player_graph(Hp: nx.DiGraph, show_labels=True, seed=42):
     plt.tight_layout()
     st.pyplot(fig)
 
+def draw_ego_graph(G: nx.DiGraph, node: str, seed=42):
+    """
+    Desenha o subgrafo induzido pelo nó e seus vizinhos (ego graph).
+    """
+    Gu = G.to_undirected()
+
+    if node not in Gu:
+        st.warning("Clube não encontrado no grafo.")
+        return
+
+    neighbors = list(Gu.neighbors(node))
+    nodes = [node] + neighbors
+
+    H = Gu.subgraph(nodes).copy()
+
+    try:
+        pos = nx.spring_layout(H, seed=seed, k=0.9)
+    except Exception:
+        pos = nx.kamada_kawai_layout(H)
+
+    fig = plt.figure(figsize=(8, 6))
+    ax = plt.gca()
+    ax.set_facecolor("white")
+    fig.patch.set_facecolor("white")
+
+    nx.draw_networkx_nodes(H, pos, nodelist=neighbors, node_size=300, alpha=0.8)
+    nx.draw_networkx_nodes(H, pos, nodelist=[node], node_size=800, node_color="orange", alpha=0.95)
+
+    nx.draw_networkx_edges(H, pos, alpha=0.5)
+    nx.draw_networkx_labels(H, pos, font_size=8)
+
+    plt.title(f"Vizinhança imediata do clube: {node}")
+    plt.axis("off")
+    plt.tight_layout()
+    st.pyplot(fig)
+
 
 # =========================
 # Dataset fixo
@@ -565,12 +601,57 @@ elif menu == "Graus":
         "com os quais um clube realizou transferências."
     )
 
+    # =========================
+    # Distribuição de graus
+    # =========================
     st.markdown("### Distribuição de graus")
     plot_degree_histogram(G)
 
     hubs = top_hubs(G, k=10)
     st.write("Top 10 clubes por grau (grafo não direcionado):")
     st.dataframe(pd.DataFrame(hubs, columns=["clube", "grau"]), use_container_width=True)
+
+    st.divider()
+
+    # =========================
+    # Grau de um clube específico
+    # =========================
+    st.markdown("### Grau de um clube específico")
+
+    Gu = G.to_undirected()
+    clubs = sorted(list(Gu.nodes()))
+    club = st.selectbox("Selecione um clube", clubs)
+
+    if club:
+        grau_total = Gu.degree(club)
+        grau_in = G.in_degree(club)
+        grau_out = G.out_degree(club)
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Grau total", grau_total)
+        c2.metric("Grau de entrada", grau_in)
+        c3.metric("Grau de saída", grau_out)
+
+        if grau_total <= 2:
+            st.info("Interpretação: clube periférico, com poucas conexões no mercado de transferências.")
+        elif grau_total <= 10:
+            st.info("Interpretação: clube moderadamente conectado, participa de algumas rotas do mercado.")
+        else:
+            st.success("Interpretação: clube central (hub), com muitas conexões e papel estrutural relevante na rede.")
+
+        st.divider()
+
+        # =========================
+        # Subgrafo ego (nó + vizinhos)
+        # =========================
+        st.markdown("### Vizinhança imediata do clube")
+        st.write(
+            "O grafo abaixo representa o **subgrafo induzido** pelo clube selecionado "
+            "e seus **vizinhos diretos** (transferências com conexão imediata)."
+        )
+
+        draw_ego_graph(G, club)
+
 
 elif menu == "Hubs":
     st.subheader("Hubs do grafo")
@@ -996,4 +1077,3 @@ elif menu == "Cortes de arestas":
                     "Não consegui calcular o corte mínimo (pode ser pesado em alguns grafos). "
                     f"Detalhe: {e}"
                 )
-
