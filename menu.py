@@ -485,7 +485,6 @@ menu = st.sidebar.selectbox(
         "Cliques",
         "Arestas de maior peso",
         "Árvore de abrangência",
-        "Árvore central",
         "Cortes de arestas",
     ],
 )
@@ -997,3 +996,4 @@ elif menu == "Cortes de arestas":
                     "Não consegui calcular o corte mínimo (pode ser pesado em alguns grafos). "
                     f"Detalhe: {e}"
                 )
+
